@@ -1,0 +1,5 @@
+---
+# defaults file for gitlab_license
+person: "Elon Musk"
+company: "Tesla Motors"
+email: "e.musk@tesla.com"

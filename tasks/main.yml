@@ -1,0 +1,65 @@
+---
+# tasks file for gitlab_license
+- name: install ruby packages
+  block:
+    - name: Install ruby package
+      ansible.builtin.package:
+        name: ruby
+        state: present
+    - name: Install latest available version of gitlab-license
+      community.general.gem:
+        name: gitlab-license
+        state: latest
+
+- name: create directory /var/tmp/gitlab-license
+  block:
+    - name: Create a directory if it does not exist
+      ansible.builtin.file:
+        path: /var/tmp/gitlab-license
+        state: directory
+        mode: '0755'
+    - name: write hostname using jinja2
+      ansible.builtin.template:
+        src: templates/license.j2
+        dest: /var/tmp/gitlab-license/license.rb
+        mode: '0755'
+
+- name: run license.rb
+  ansible.builtin.command: ruby license.rb
+  args:
+    chdir: /var/tmp/gitlab-license/
+
+- name: backup and replace .license_encryption_key.pub
+  block:
+    - name: backup .license_encryption_key.pub
+      ansible.builtin.copy:
+        src: /opt/gitlab/embedded/service/gitlab-rails/.license_encryption_key.pub
+        dest: /var/tmp/gitlab-license/backup{{ ansible_date_time.date }}.license_encryption_key.pub
+        remote_src: yes
+        mode: '0755'
+    - name: copy 
+      ansible.builtin.copy:
+        src: /var/tmp/gitlab-license/license_key.pub
+        dest: /opt/gitlab/embedded/service/gitlab-rails/.license_encryption_key.pub
+        remote_src: yes
+        mode: '0755'
+
+- name: backup and replace line replacerestricted_attr(:plan).presence
+  block:
+    - name: backup license.rb
+      ansible.builtin.copy:
+        src: /opt/gitlab/embedded/service/gitlab-rails/ee/app/models/license.rb
+        dest: /var/tmp/gitlab-license/backup{{ ansible_date_time.date }}_license.rb
+        remote_src: yes
+        mode: '0755'
+    - name: Replace plan model
+      ansible.builtin.lineinfile:
+        path: /opt/gitlab/embedded/service/gitlab-rails/ee/app/models/license.rb
+        search_string: 'restricted_attr(:plan).presence || '
+        line: 'restricted_attr(:plan).presence || PREMIUM_PLAN'
+    - name: reconfigure && restart gitlab
+      block:
+        - name: gitlab reconfigure 
+          ansible.builtin.command: gitlab-ctl reconfigure
+        - name: gitlab restart
+          ansible.builtin.command: gitlab-ctl restart
